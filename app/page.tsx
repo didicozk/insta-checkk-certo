@@ -1344,10 +1344,15 @@ export default function SpySystem() {
             </div>
 
             <Button
-              onClick={nextStage}
-              className="mt-3 px-10 py-5 text-xl font-bold uppercase bg-gradient-to-r from-red-600 to-red-800 text-white shadow-lg hover:from-red-700 hover:to-gray-900 transition-all duration-300 transform hover:scale-105 animate-pulse-slow flex-shrink-0"
+              onClick={
+                () =>
+                  (window.location.href =
+                    "https://pay.mundpay.com/01997889-d90f-7176-b1ad-330b2aadd114?ref=ref_6882197dcd2fb") // Updated checkout link with new ref parameter
+              }
+              disabled={timeLeft === 0} // Disable button if offer expired
+              className="mt-10 px-10 py-5 text-xl font-bold uppercase bg-gradient-to-r from-red-700 to-black text-white shadow-lg hover:from-red-800 hover:to-gray-900 transition-all duration-300 transform hover:scale-105 animate-pulse-slow disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              ➡️ UNLOCK DETAILS
+              💣 SEE FINAL RESULT
             </Button>
           </div>
         )
@@ -1387,9 +1392,11 @@ export default function SpySystem() {
               <p className="text-2xl md:text-3xl font-bold text-red-500">Offer expired!</p>
             )}
             <Button
-              onClick={() =>
-                (window.location.href = "https://pay.mundpay.com/01997889-d90f-7176-b1ad-330b2aadd114?ref=")
-              } // Updated MundPay checkout link
+              onClick={
+                () =>
+                  (window.location.href =
+                    "https://pay.mundpay.com/01997889-d90f-7176-b1ad-330b2aadd114?ref=ref_6882197dcd2fb") // Updated checkout link with new ref parameter
+              }
               disabled={timeLeft === 0} // Disable button if offer expired
               className="mt-10 px-10 py-5 text-xl font-bold uppercase bg-gradient-to-r from-red-700 to-black text-white shadow-lg hover:from-red-800 hover:to-gray-900 transition-all duration-300 transform hover:scale-105 animate-pulse-slow disabled:opacity-50 disabled:cursor-not-allowed"
             >
