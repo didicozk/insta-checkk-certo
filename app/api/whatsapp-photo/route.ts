@@ -1,20 +1,21 @@
 import { type NextRequest, NextResponse } from "next/server"
 
+const cache = new Map<string, { result: string; timestamp: number }>()
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
 export async function POST(request: NextRequest) {
-  // JSON-default de retorno em caso de falha da API externa
   const fallbackPayload = {
     success: true,
-    result:
-      "https://media.istockphoto.com/id/1337144146/vector/default-avatar-profile-icon-vector.jpg?s=612x612&w=0&k=20&c=BIbFwuv7FxTWvh5S3vB6bkT0Qv8Vn8N5Ffseq84ClGI=",
+    result: "https://i.postimg.cc/gcNd6QBM/img1.jpg",
     is_photo_private: true,
   }
 
   try {
-    const { phone } = await request.json()
+    const { phone, countryCode } = await request.json()
 
     if (!phone) {
       return NextResponse.json(
-        { success: false, error: "Número de telefone é obrigatório" },
+        { success: false, error: "Phone number is required" },
         {
           status: 400,
           headers: { "Access-Control-Allow-Origin": "*" },
@@ -22,29 +23,55 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Remove caracteres não numéricos
-    const cleanPhone = phone.replace(/[^0-9]/g, "")
+    const tel = phone.replace(/[^0-9]/g, "")
+    const codigoPais = countryCode?.replace(/[^0-9]/g, "") || ""
 
-    // Adiciona código do país se não tiver (assumindo Brasil +55)
-    let fullNumber = cleanPhone
-    if (!cleanPhone.startsWith("55") && cleanPhone.length === 11) {
-      fullNumber = "55" + cleanPhone
+    // Get 3rd digit for Brazilian number formatting
+    const tel9 = tel.substr(2, 1)
+
+    // Format Brazilian numbers (remove extra 9 if necessary)
+    const telFormatado =
+      codigoPais === "55" && tel.length === 11 ? tel.substr(0, 2) + (tel9 === "9" ? "" : tel9) + tel.substr(3) : tel
+
+    const fullPhone = codigoPais + telFormatado
+
+    const cached = cache.get(fullPhone)
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      console.log("[v0] Returning cached WhatsApp photo")
+      return NextResponse.json(
+        {
+          success: true,
+          result: cached.result,
+          is_photo_private: false,
+        },
+        {
+          status: 200,
+          headers: { "Access-Control-Allow-Origin": "*" },
+        },
+      )
     }
 
-    const response = await fetch(
-      `https://primary-production-aac6.up.railway.app/webhook/request_photo?tel=${fullNumber}`,
-      {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          Origin: "https://whatspy.chat",
-        },
-        signal: AbortSignal.timeout?.(10_000),
+    const urlProfile = `https://whatsapp-data.p.rapidapi.com/wspicture?phone=${fullPhone}`
+
+    const response = await fetch(urlProfile, {
+      method: "GET",
+      headers: {
+        "X-RapidAPI-Key": "663753efb4mshcbbdde11e811789p149069jsnd73bd1ba7a71",
+        "X-RapidAPI-Host": "whatsapp-data.p.rapidapi.com",
       },
-    )
+      signal: AbortSignal.timeout?.(10_000),
+    })
+
+    if (response.status === 429) {
+      console.log("[v0] Rate limit exceeded, returning fallback")
+      return NextResponse.json(fallbackPayload, {
+        status: 200,
+        headers: { "Access-Control-Allow-Origin": "*" },
+      })
+    }
 
     if (!response.ok) {
-      console.error("API externa retornou status:", response.status)
+      console.error("[v0] RapidAPI returned status:", response.status)
       return NextResponse.json(fallbackPayload, {
         status: 200,
         headers: { "Access-Control-Allow-Origin": "*" },
@@ -53,32 +80,30 @@ export async function POST(request: NextRequest) {
 
     const responseText = await response.text()
 
-    if (!responseText || responseText.trim() === "") {
-      console.log("[v0] Empty response from API, returning fallback")
+    if (!responseText || responseText.trim() === "" || !responseText.startsWith("https://")) {
+      console.log("[v0] Invalid or empty response from RapidAPI, returning fallback")
       return NextResponse.json(fallbackPayload, {
         status: 200,
         headers: { "Access-Control-Allow-Origin": "*" },
       })
     }
 
-    let data
-    try {
-      data = JSON.parse(responseText)
-    } catch (parseError) {
-      console.log("[v0] Invalid JSON response:", responseText)
-      return NextResponse.json(fallbackPayload, {
-        status: 200,
-        headers: { "Access-Control-Allow-Origin": "*" },
-      })
+    cache.set(fullPhone, {
+      result: responseText.trim(),
+      timestamp: Date.now(),
+    })
+
+    if (cache.size > 100) {
+      const oldestKey = Array.from(cache.entries()).sort((a, b) => a[1].timestamp - b[1].timestamp)[0][0]
+      cache.delete(oldestKey)
     }
 
-    const isPhotoPrivate = !data?.link || data.link.includes("no-user-image-icon")
-
+    // Photo URL found successfully
     return NextResponse.json(
       {
         success: true,
-        result: isPhotoPrivate ? fallbackPayload.result : data.link,
-        is_photo_private: isPhotoPrivate,
+        result: responseText.trim(),
+        is_photo_private: false,
       },
       {
         status: 200,
@@ -86,7 +111,7 @@ export async function POST(request: NextRequest) {
       },
     )
   } catch (err) {
-    console.error("Erro no webhook WhatsApp:", err)
+    console.error("[v0] Error fetching WhatsApp photo:", err)
     return NextResponse.json(fallbackPayload, {
       status: 200,
       headers: { "Access-Control-Allow-Origin": "*" },
